@@ -30,36 +30,46 @@ def repositories(user, args):
 def search(comments, search_comments, found_comments):
     for sc in search_comments:
         for comment in comments:
-            if sc in comment.body:
-                if not sc in found_comments:
-                    found_comments[sc] = []
-                found_comments[sc].append(comment)
+            fc = sc.split(':')[0]
+            if fc in comment.body:
+                if not fc in found_comments:
+                    found_comments[fc] = []
+                found_comments[fc].append(comment)
     return found_comments
 
-def delete_comments_int(found_comments):
-    for sc in found_comments:
-        last_comment = None
-        for comment in found_comments[sc]:
-            if not last_comment or last_comment.updated_at < comment.updated_at:
-                last_comment = comment
-        for comment in found_comments[sc]:
-            if comment.id != last_comment.id:
-                comment.delete()
-                print(f'Comment {comment.id} deleted')
+def delete_comments_int(found_comments, search_comments):
+    for fc in found_comments:
+        fc_offset = None
+        for sc in search_comments:
+            if fc in sc:
+                cnt = sc.split(':')[1]
+                try:
+                    cnt = int(cnt)
+                except ValueError:
+                    cnt = 1
+                fc_offset = cnt
+        fc_desc = sorted(found_comments[fc], key=lambda x: x.updated_at, reverse=True)
+        for comment in fc_desc[fc_offset:]:
+            comment.delete()
+            print(f'Comment {comment.id} deleted')
 
-def delete_comments(user, repos, args):
+def delete_comments(pull, args):
     search_comments = args['delete_comments'].split(';')
+    found_comments = {}
+    comments = pull.get_review_comments()
+    found_comments = search(comments, search_comments, found_comments)
+    comments = pull.get_issue_comments()
+    found_comments = search(comments, search_comments, found_comments)
+    delete_comments_int(found_comments, search_comments)
+
+def process(user, repos, args):
     for repo in repos:
         pulls = repo.get_pulls(state='open', sort='updated', direction='desc')
         for pull in pulls:
             if pull.user.login == user.login:
                 print(f'Processing PR {pull.title}')
-                found_comments = {}
-                comments = pull.get_review_comments()
-                found_comments = search(comments, search_comments, found_comments)
-                comments = pull.get_issue_comments()
-                found_comments = search(comments, search_comments, found_comments)
-                delete_comments_int(found_comments)
+                delete_comments(pull, args)
+
 
 def main():
     if not pas:
@@ -72,7 +82,7 @@ def main():
 
     repos = repositories(user, args)
 
-    delete_comments(user, repos, args)
+    process(user, repos, args)
 
     api.close()
 
